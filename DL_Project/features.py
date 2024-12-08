@@ -1,4 +1,3 @@
-import os
 import numpy as np
 import pandas as pd
 import logging
@@ -10,6 +9,7 @@ from featurewiz import featurewiz
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from concurrent.futures import ProcessPoolExecutor
+import os
 
 # Setting up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -241,7 +241,9 @@ def load_and_preprocess_eeg(participant_id, path):
         montage = mne.channels.make_standard_montage('standard_1020')
         raw_data.set_montage(montage)
 
-        common_channels = ['AF4', 'F8', 'F4', 'FC6', 'T8', 'P8', 'O2', 'Oz', 'Fp1']
+        #common_channels = ['AF4', 'F8', 'F4', 'FC6', 'T8', 'P8', 'O2', 'Oz', 'Fp1']
+
+        common_channels = ['C3', 'Cz', 'C4', 'CPz', 'P3', 'Pz', 'P4', 'POz']
 
         # Check which channels are available in the raw EEG data
         available_channels = [ch for ch in common_channels if ch in raw_data.info['ch_names']]
@@ -331,10 +333,10 @@ def main():
     Main function to process EEG data for all participants, save extracted features,
     combine features into one dataset, and perform feature selection.
     """
-    path = '/autism_marker_EEG/Aging/'
-    output_path = '/features/'
-    combined_csv_path = '/features_combined.csv'
-    reduced_combined_csv_path = '/features_combined_reduced.csv'
+    path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/'
+    output_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features'
+    combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_combined.csv'
+    reduced_combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_reduced.csv'
 
     os.makedirs(output_path, exist_ok=True)
 

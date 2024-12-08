@@ -1,3 +1,5 @@
+Basic Model Comparison (Non-Exhaustive Non-Noisy Features)
+
 2024-12-08 15:05:37,035 - INFO - Training SVM...
 2024-12-08 15:05:37,035 - INFO - Using previously saved best parameters for SVM: {'C': 100, 'gamma': 'scale', 'kernel': 'rbf'}
 2024-12-08 15:05:37,087 - INFO - Classification Report for SVM:

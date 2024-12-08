@@ -66,9 +66,10 @@ def preprocess_data(data):
 # Define hyperparameter grids for each model
 parameter_grids = {
     'SVM': {
-        'C': [1e-3, 1e-2, 1e-1, 1, 10, 100],
+        'C': np.logspace(-3, 3, 7),
         'kernel': ['rbf', 'poly', 'sigmoid'],
-        'gamma': ['scale', 'auto']
+        'gamma': ['scale', 'auto'],
+        'class_weight': [None, 'balanced'],
     },
     'KNN': {
         'n_neighbors': [3, 5, 7, 10, 15],
@@ -77,36 +78,47 @@ parameter_grids = {
     },
     'GradientBoosting': {
         'n_estimators': [50, 100, 200, 300],
-        'learning_rate': [0.01, 0.1, 1.0],
-        'subsample': [0.8, 1.0]
+        'learning_rate': [0.01, 0.1, 0.5, 1],
+        'max_depth': [3, 5, 7, 10],
+        'subsample': [0.5, 0.7, 1.0],
+        'min_samples_split': [2, 5, 10],
+        'max_features': ['None', 'sqrt', 'log2']
     },
     'ExtraTrees': {
         'n_estimators': [50, 100, 200, 300],
         'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10]
+        'min_samples_split': [2, 5, 10],
+        'max_features': ['None', 'sqrt', 'log2'],
     },
     'RandomForest': {
         'n_estimators': [50, 100, 200, 300],
         'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10]
+        'min_samples_split': [2, 5, 10],
+        'max_features': ['None', 'sqrt', 'log2'],
+        'bootstrap': [True, False]
     },
     'DecisionTree': {
-        'criterion': ['gini', 'entropy'],
+        'criterion': ['gini', 'entropy', 'log loss'],
         'min_samples_split': [2, 5, 10],
         'max_depth': [None, 10, 20, 30]
     },
     'LogisticRegression': {
         'solver': ['liblinear', 'lbfgs', 'saga'],
-        'penalty': ['l1', 'l2'],
-        'C': [0.1, 1, 10]
+        'penalty': ['l1', 'l2', 'none'],
+        'class_weight': [None, 'balanced'],
+        'C': np.logspace(-3, 3, 7),
     },
     'AdaBoost': {
-        'n_estimators': [50, 100, 200],
-        'learning_rate': [0.01, 0.1, 1.0]
+        'n_estimators': [50, 100, 200, 300],
+        'learning_rate': [0.01, 0.1, 1.0, 10.0],
+        'algorithm': ['SAMME', 'SAMME.R']
     },
     'MLP': {
-        'hidden_layer_sizes': [(100,), (50, 50), (100, 100)],
-        'solver': ['adam', 'lbfgs', 'sgd']
+        'hidden_layer_sizes': [(50,), (100,), (50, 50), (100, 50)],
+        'activation': ['relu', 'tanh', 'logistic'],
+        'solver': ['adam', 'lbfgs', 'sgd'],
+        'learning_rate': ['constant', 'adaptive'],
+        'alpha': np.logspace(-4, 2, 7)
     },
     'NaiveBayes': {}  # No hyperparameters for tuning
 }
