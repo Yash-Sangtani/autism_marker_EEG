@@ -245,20 +245,23 @@ def train_and_evaluate_models(data, models, parameter_grids):
             if best_params:
                 logging.info(f"Using previously saved best parameters for {model_name}: {best_params}")
                 model.set_params(**best_params)
-                best_model = model
-            elif parameter_grids.get(model_name):
-                grid_search = GridSearchCV(estimator=model, param_grid=parameter_grids[model_name],
-                                           scoring='accuracy', cv=5, verbose=2)
-                grid_search.fit(X_train, y_train)
-                best_model = grid_search.best_estimator_
-                save_best_params(model_name, grid_search.best_params_)
-                logging.info(f"Best parameters for {model_name}: {grid_search.best_params_}")
             else:
-                best_model = model
-                best_model.fit(X_train, y_train)
+                if parameter_grids.get(model_name):
+                    grid_search = GridSearchCV(estimator=model, param_grid=parameter_grids[model_name],
+                                               scoring='accuracy', cv=5, verbose=2)
+                    grid_search.fit(X_train, y_train)
+                    best_params = grid_search.best_params_
+                    save_best_params(model_name, best_params)
+                    model = grid_search.best_estimator_
+                    logging.info(f"Best parameters for {model_name}: {best_params}")
+                else:
+                    model.fit(X_train, y_train)
 
-            y_pred = best_model.predict(X_test)
-            y_prob = best_model.predict_proba(X_test)[:, 1] if hasattr(best_model, 'predict_proba') else None
+            # Always train the model on the training data
+            model.fit(X_train, y_train)
+
+            y_pred = model.predict(X_test)
+            y_prob = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
 
             # Aggregating patient-level predictions
             patient_results = aggregate_patient_predictions(data, y_pred, test_data, method='majority_vote')
@@ -277,6 +280,7 @@ def train_and_evaluate_models(data, models, parameter_grids):
             logging.error(f"Error training {model_name}: {e}")
 
     compare_model_performance(results)
+
 
 
 # Compare model performances in a tabular format
