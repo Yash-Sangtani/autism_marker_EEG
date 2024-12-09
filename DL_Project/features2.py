@@ -15,6 +15,11 @@ import glob
 # Setting up logging
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+import numpy as np
+import scipy.sparse as sp
+from sklearn.neighbors import NearestNeighbors
+import itertools
+
 def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, minimum_line_length=2):
     """
     Extract Recurrence Quantitative Analysis (RQA) features from EEG signal.
@@ -46,13 +51,20 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
     # Embed the time series
     embedded_ts = embed(data, embedding_dimension, time_delay)
     
-    # Create recurrence matrix
-    def recurrence_matrix(embedded_ts, radius):
-        """Create binary recurrence matrix"""
-        distances = np.linalg.norm(embedded_ts[:, np.newaxis] - embedded_ts, axis=2)
-        return (distances <= radius).astype(int)
-    
-    # Compute recurrence matrix
+    # Use NearestNeighbors for efficient pairwise distance calculation
+    def recurrence_matrix(embedded_ts, radius, n_neighbors=50):
+        """Create binary recurrence matrix using nearest neighbors"""
+        nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm='auto', metric='euclidean')
+        nbrs.fit(embedded_ts)
+        
+        # Get distances of k nearest neighbors and apply radius condition
+        distances, indices = nbrs.kneighbors(embedded_ts)
+        recurrence_matrix = (distances <= radius).astype(int)
+        
+        # Convert to sparse matrix format
+        return sp.csr_matrix(recurrence_matrix)
+
+    # Compute recurrence matrix as sparse matrix
     recurrence_matrix_data = recurrence_matrix(embedded_ts, radius)
     
     # Recurrence Rate (RR)
@@ -70,8 +82,10 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
             diag_lines.extend([l for l in line_lengths if l >= min_length])
         return diag_lines
     
-    diag_lines = diagonal_lines(recurrence_matrix_data, minimum_line_length)
-    det = sum(diag_lines) / np.sum(recurrence_matrix_data) if np.sum(recurrence_matrix_data) > 0 else 0
+    # Convert sparse matrix to dense for diagonal line analysis
+    recurrence_matrix_dense = recurrence_matrix_data.toarray()
+    diag_lines = diagonal_lines(recurrence_matrix_dense, minimum_line_length)
+    det = sum(diag_lines) / np.sum(recurrence_matrix_dense) if np.sum(recurrence_matrix_dense) > 0 else 0
     
     # Laminarity (LAM)
     def vertical_lines(matrix, min_length):
@@ -85,8 +99,8 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
             vert_lines.extend([l for l in line_lengths if l >= min_length])
         return vert_lines
     
-    vert_lines = vertical_lines(recurrence_matrix_data, minimum_line_length)
-    lam = sum(vert_lines) / np.sum(recurrence_matrix_data) if np.sum(recurrence_matrix_data) > 0 else 0
+    vert_lines = vertical_lines(recurrence_matrix_dense, minimum_line_length)
+    lam = sum(vert_lines) / np.sum(recurrence_matrix_dense) if np.sum(recurrence_matrix_dense) > 0 else 0
     
     # Maximum Diagonal Line Length
     l_max = max(diag_lines) if diag_lines else 0
@@ -106,7 +120,7 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
     l_mean = np.mean(diag_lines) if diag_lines else 0
     
     # Trapping Time (approximation)
-    tt = max(vertical_lines(recurrence_matrix_data, minimum_line_length)) if vert_lines else 0
+    tt = max(vertical_lines(recurrence_matrix_dense, minimum_line_length)) if vert_lines else 0
     
     # Return features
     return {
@@ -118,6 +132,7 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
         'L_mean': l_mean,
         'TT': tt
     }
+
 
 def extract_complexity_features(data):
     """
