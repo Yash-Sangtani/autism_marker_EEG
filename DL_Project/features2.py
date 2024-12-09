@@ -1,24 +1,23 @@
-import numpy as np
+import fix_pyrqa
 import pandas as pd
 import logging
+import numpy as np
 import pywt
+import pyrqa
 import nolds
 import os
 import mne
 from scipy.stats import skew, kurtosis
 from scipy.signal import welch
 from concurrent.futures import ProcessPoolExecutor
-import numpy as np
-import itertools
-import glob
+from pyrqa.time_series import TimeSeries
+from pyrqa.settings import Settings
+from pyrqa.metric import EuclideanMetric
+from pyrqa.neighbourhood import FixedRadius
+from pyrqa.computation import RPComputation
 
 # Setting up logging
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-import numpy as np
-import scipy.sparse as sp
-from sklearn.neighbors import NearestNeighbors
-import itertools
 
 def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, minimum_line_length=2):
     """
@@ -42,88 +41,54 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
     dict
         RQA features including RR, DET, LAM, L_max, L_entr, L_mean, and TT.
     """
-    # Reconstruct phase space
-    def embed(x, m, tau):
-        """Embed time series into m-dimensional space with time delay tau"""
-        n = len(x) - (m-1)*tau
-        return np.array([x[i:i+n:tau] for i in range(m)]).T
 
-    # Embed the time series
-    embedded_ts = embed(data, embedding_dimension, time_delay)
-    
-    # Use NearestNeighbors for efficient pairwise distance calculation
-    def recurrence_matrix(embedded_ts, radius, n_neighbors=50):
-        """Create binary recurrence matrix using nearest neighbors"""
-        nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm='auto', metric='euclidean')
-        nbrs.fit(embedded_ts)
-        
-        # Get distances of k nearest neighbors and apply radius condition
-        distances, indices = nbrs.kneighbors(embedded_ts)
-        recurrence_matrix = (distances <= radius).astype(int)
-        
-        # Convert to sparse matrix format
-        return sp.csr_matrix(recurrence_matrix)
 
-    # Compute recurrence matrix as sparse matrix
-    recurrence_matrix_data = recurrence_matrix(embedded_ts, radius)
+def calculate_rqa_features(data, embedding_dimension, time_delay, radius, minimum_line_length):
+    # Create TimeSeries object
+    time_series = TimeSeries(data, 
+                             embedding_dimension=embedding_dimension, 
+                             time_delay=time_delay)
+
+    # Configure settings
+    settings = Settings(time_series,
+                        neighbourhood=FixedRadius(radius),
+                        metric=EuclideanMetric)
+
+    # Compute recurrence plot
+    computation = RPComputation.create(settings)
+    recurrence_matrix = computation.run()
+
+    # Calculate RQA features manually from the recurrence matrix
+    total_points = recurrence_matrix.shape[0] * recurrence_matrix.shape[1]
     
     # Recurrence Rate (RR)
-    rr = np.sum(recurrence_matrix_data) / (recurrence_matrix_data.shape[0] ** 2)
-    
+    rr = np.sum(recurrence_matrix) / total_points
+
     # Determinism (DET)
-    def diagonal_lines(matrix, min_length):
-        """Find diagonal lines longer than min_length"""
-        rows, cols = matrix.shape
-        diag_lines = []
-        for k in range(-rows+1, cols):
-            diag = np.diagonal(matrix, k)
-            # Find consecutive 1s
-            line_lengths = [len(list(g)) for k, g in itertools.groupby(diag) if k]
-            diag_lines.extend([l for l in line_lengths if l >= min_length])
-        return diag_lines
-    
-    # Convert sparse matrix to dense for diagonal line analysis
-    recurrence_matrix_dense = recurrence_matrix_data.toarray()
-    diag_lines = diagonal_lines(recurrence_matrix_dense, minimum_line_length)
-    det = sum(diag_lines) / np.sum(recurrence_matrix_dense) if np.sum(recurrence_matrix_dense) > 0 else 0
-    
+    diagonal_lines = np.sum(np.sum(recurrence_matrix, axis=1) >= minimum_line_length)
+    det = diagonal_lines / np.sum(recurrence_matrix)
+
     # Laminarity (LAM)
-    def vertical_lines(matrix, min_length):
-        """Find vertical lines longer than min_length"""
-        cols = matrix.shape[1]
-        vert_lines = []
-        for col in range(cols):
-            column = matrix[:, col]
-            # Find consecutive 1s
-            line_lengths = [len(list(g)) for k, g in itertools.groupby(column) if k]
-            vert_lines.extend([l for l in line_lengths if l >= min_length])
-        return vert_lines
-    
-    vert_lines = vertical_lines(recurrence_matrix_dense, minimum_line_length)
-    lam = sum(vert_lines) / np.sum(recurrence_matrix_dense) if np.sum(recurrence_matrix_dense) > 0 else 0
-    
+    vertical_lines = np.sum(np.sum(recurrence_matrix, axis=0) >= minimum_line_length)
+    lam = vertical_lines / np.sum(recurrence_matrix)
+
     # Maximum Diagonal Line Length
-    l_max = max(diag_lines) if diag_lines else 0
-    
+    l_max = np.max(np.sum(np.triu(recurrence_matrix), axis=1))
+
     # Entropy of Diagonal Lines
-    def entropy_diagonal_lines(diag_lines):
-        """Compute entropy of diagonal line lengths"""
-        if not diag_lines:
-            return 0
-        total_lines = sum(diag_lines)
-        prob = [l/total_lines for l in diag_lines]
-        return -sum(p * np.log(p) for p in prob)
-    
-    l_entr = entropy_diagonal_lines(diag_lines)
-    
+    diagonal_lengths = np.sum(np.triu(recurrence_matrix), axis=1)
+    diagonal_lengths = diagonal_lengths[diagonal_lengths > 0]
+    diagonal_prob = diagonal_lengths / np.sum(diagonal_lengths)
+    l_entr = -np.sum(diagonal_prob * np.log(diagonal_prob))
+
     # Mean Diagonal Line Length
-    l_mean = np.mean(diag_lines) if diag_lines else 0
-    
+    l_mean = np.mean(diagonal_lengths)
+
     # Trapping Time (approximation)
-    tt = max(vertical_lines(recurrence_matrix_dense, minimum_line_length)) if vert_lines else 0
-    
+    tt = np.max(np.sum(recurrence_matrix, axis=0))
+
     # Return features
-    return {
+    rqa_features = {
         'RR': rr,
         'DET': det,
         'LAM': lam,
@@ -133,6 +98,7 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
         'TT': tt
     }
 
+    return rqa_features
 
 def extract_complexity_features(data):
     """
@@ -303,27 +269,21 @@ def save_features_to_csv(participant_id, all_features, output_path):
     logging.info(f"Features saved to {csv_path}.")
 
 def combine_all_features(output_path, combined_csv_path):
-    # Find all CSV files in the output path
-    feature_files = glob.glob(os.path.join(output_path, '*_features.csv'))
-    
-    # Debug: Print information about feature files
-    print("Output Path:", output_path)
-    print("Combined CSV Path:", combined_csv_path)
-    print("Number of feature files found:", len(feature_files))
-    
-    if not feature_files:
-        print("No feature files found. Checking directory contents:")
-        print("Directory contents:", os.listdir(output_path))
-    
-    # If no files found, raise a more informative error
-    if not feature_files:
-        raise ValueError(f"No feature CSV files found in {output_path}. Please check your feature extraction process.")
-    
-    # Proceed with concatenation if files exist
+    """
+    Combine features of all participants into a single CSV file.
+
+    Parameters:
+    -----------
+    output_path : str
+        Path where individual participant feature files are stored.
+    combined_csv_path : str
+        Path to save the combined CSV file.
+    """
+    logging.info("Combining all participant features into one CSV file.")
     feature_files = [os.path.join(output_path, f) for f in os.listdir(output_path) if f.endswith('_features.csv')]
     combined_data = pd.concat([pd.read_csv(file) for file in feature_files], ignore_index=True)
     combined_data.to_csv(combined_csv_path, index=False)
-    print(f"Combined features saved to {combined_csv_path}")
+    logging.info(f"Combined features saved to {combined_csv_path}.")
 
 def process_participants(participant_ids, data_path, output_path):
     """
@@ -360,7 +320,7 @@ def main():
     ]
 
     data_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/Aging/'
-    output_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/features2'
+    output_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/Aging/features'
     combined_csv_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/features2_combined.csv'
     
     os.makedirs(output_path, exist_ok=True)
