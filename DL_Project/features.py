@@ -333,10 +333,12 @@ def main():
     Main function to process EEG data for all participants, save extracted features,
     combine features into one dataset, and perform feature selection.
     """
-    path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/'
-    output_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/features'
-    combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_combined.csv'
-    reduced_combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_reduced.csv'
+    path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/autism_marker_EEG/Aging/'
+    output_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/autism_marker_EEG/features/'
+    combined_csv_path = ('C:/Users/Dhruv/PycharmProjects/DeepLearning/autism_marker_EEG'
+                         '/features_combined.csv')
+    reduced_combined_csv_path = ('C:/Users/Dhruv/PycharmProjects/DeepLearning/autism_marker_EEG'
+                                 '/features_combined_reduced.csv')
 
     os.makedirs(output_path, exist_ok=True)
 

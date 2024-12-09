@@ -1,4 +1,3 @@
-import fix_pyrqa
 import pandas as pd
 import logging
 import numpy as np
@@ -7,8 +6,6 @@ import pyrqa
 import nolds
 import os
 import mne
-from scipy.stats import skew, kurtosis
-from scipy.signal import welch
 from concurrent.futures import ProcessPoolExecutor
 from pyrqa.time_series import TimeSeries
 from pyrqa.settings import Settings
@@ -21,8 +18,8 @@ from pyrqa.computation import RPComputation
 
 def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, minimum_line_length=2):
     """
-    Extract Recurrence Quantitative Analysis (RQA) features from EEG signal.
-    
+    Extract Recurrence Quantitative Analysis (RQA) features from EEG signal using batch processing for memory efficiency.
+
     Parameters:
     -----------
     data : ndarray
@@ -35,7 +32,7 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
         Radius for defining recurrences.
     minimum_line_length : int
         Minimum line length for diagonal line analysis.
-    
+
     Returns:
     --------
     dict
@@ -129,6 +126,7 @@ def extract_complexity_features(data):
             'dfa': np.nan
         }
 
+
 def apply_wavelet_decomposition(data, wavelet='db4'):
     """
     Decompose EEG signal using Daubechies (db4) wavelet and return power of six frequency bands.
@@ -147,7 +145,7 @@ def apply_wavelet_decomposition(data, wavelet='db4'):
     """
     # Perform wavelet decomposition (db4) on the signal
     coeffs = pywt.wavedec(data, wavelet)
-    
+
     # Define six frequency bands for power estimation
     band_powers = {}
     band_powers['band_1'] = np.sum(np.abs(coeffs[0]))  # Approximation coefficients (low freq)
@@ -159,7 +157,9 @@ def apply_wavelet_decomposition(data, wavelet='db4'):
 
     return band_powers
 
-def extract_features_from_eeg(data, channel_name, embedding_dimension=3, time_delay=1, radius=0.1, minimum_line_length=2):
+
+def extract_features_from_eeg(data, channel_name, embedding_dimension=3, time_delay=1, radius=0.1,
+                              minimum_line_length=2):
     """
     Extract features from EEG data for a single channel.
 
@@ -192,6 +192,7 @@ def extract_features_from_eeg(data, channel_name, embedding_dimension=3, time_de
     features['channel'] = channel_name
     return features
 
+
 def load_and_preprocess_eeg(participant_id, path):
     """
     Load and preprocess EEG data for a participant.
@@ -219,14 +220,14 @@ def load_and_preprocess_eeg(participant_id, path):
         # Only retain the channels available in the data
         common_channels = ['C3', 'Cz', 'C4', 'CPz', 'P3', 'Pz', 'P4', 'POz']
         available_channels = [ch for ch in common_channels if ch in raw_data.info['ch_names']]
-        
+
         raw_data.pick_channels(available_channels)
-        
+
         # Resample data to 512 Hz if necessary
         target_sfreq = 512
         if raw_data.info['sfreq'] != target_sfreq:
             raw_data.resample(target_sfreq)
-        
+
         raw_data.filter(1, 40, fir_design='firwin')
 
         # Extract features from all channels
@@ -241,6 +242,7 @@ def load_and_preprocess_eeg(participant_id, path):
     except Exception as e:
         logging.error(f"Error processing data for participant {participant_id}: {e}")
         return None
+
 
 def save_features_to_csv(participant_id, all_features, output_path):
     """
@@ -257,16 +259,17 @@ def save_features_to_csv(participant_id, all_features, output_path):
     """
     logging.info(f"Saving features for participant: {participant_id}.")
     all_features_list = []
-    
+
     for channel_name, features in all_features.items():
         row = {'participant_id': participant_id, 'channel': channel_name}
         row.update(features)
         all_features_list.append(row)
-    
+
     df = pd.DataFrame(all_features_list)
     csv_path = os.path.join(output_path, f'{participant_id}_features.csv')
     df.to_csv(csv_path, index=False)
     logging.info(f"Features saved to {csv_path}.")
+
 
 def combine_all_features(output_path, combined_csv_path):
     """
@@ -304,7 +307,7 @@ def process_participants(participant_ids, data_path, output_path):
     #     all_features = load_and_preprocess_eeg(participant_id, data_path)
     if all_features:
         save_features_to_csv(participant_ids, all_features, output_path)
-    
+
     # Combine all individual participant features into one CSV
     combine_all_features(output_path, os.path.join(output_path, 'features2_combined.csv'))
 
@@ -325,7 +328,7 @@ def main():
     
     os.makedirs(output_path, exist_ok=True)
 
-        # Parallelize the processing of participants
+    # Parallelize the processing of participants
     logging.info("Starting parallel processing of participants.")
     with ProcessPoolExecutor() as executor:
         executor.map(process_participants, participant_ids, [data_path] * len(participant_ids),
@@ -334,6 +337,7 @@ def main():
     logging.info("All participants processed. Combining features.")
     # Combine all participant features into one CSV
     combine_all_features(output_path, combined_csv_path)
+
 
 if __name__ == "__main__":
     main()
