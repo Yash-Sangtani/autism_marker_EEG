@@ -334,7 +334,7 @@ def main():
     combine features into one dataset, and perform feature selection.
     """
     path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/'
-    output_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features'
+    output_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/features'
     combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_combined.csv'
     reduced_combined_csv_path = 'C:/Users/Dhruv/PycharmProjects/DeepLearning/Aging/features_reduced.csv'
 

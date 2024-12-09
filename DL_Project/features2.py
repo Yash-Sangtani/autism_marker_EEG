@@ -2,16 +2,18 @@ import numpy as np
 import pandas as pd
 import logging
 import pywt
-import pyRQA
 import nolds
 import os
 import mne
 from scipy.stats import skew, kurtosis
 from scipy.signal import welch
 from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+import itertools
+import glob
 
 # Setting up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, minimum_line_length=2):
     """
@@ -35,19 +37,79 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
     dict
         RQA features including RR, DET, LAM, L_max, L_entr, L_mean, and TT.
     """
-    rqa = pyRQA.RQA(data, embedding_dimension, time_delay, radius, minimum_line_length)
+    # Reconstruct phase space
+    def embed(x, m, tau):
+        """Embed time series into m-dimensional space with time delay tau"""
+        n = len(x) - (m-1)*tau
+        return np.array([x[i:i+n:tau] for i in range(m)]).T
+
+    # Embed the time series
+    embedded_ts = embed(data, embedding_dimension, time_delay)
     
-    # Calculate RQA features
-    rr = rqa.recurrence_rate()
-    det = rqa.determinism()
-    lam = rqa.laminarity()
-    l_max = rqa.max_diagonal_line_length()
-    l_entr = rqa.entropy_of_diagonal_lines()
-    l_mean = rqa.mean_diagonal_line_length()
-    tt = rqa.trapping_time()
+    # Create recurrence matrix
+    def recurrence_matrix(embedded_ts, radius):
+        """Create binary recurrence matrix"""
+        distances = np.linalg.norm(embedded_ts[:, np.newaxis] - embedded_ts, axis=2)
+        return (distances <= radius).astype(int)
     
-    # Return the features in a dictionary
-    rqa_features = {
+    # Compute recurrence matrix
+    recurrence_matrix_data = recurrence_matrix(embedded_ts, radius)
+    
+    # Recurrence Rate (RR)
+    rr = np.sum(recurrence_matrix_data) / (recurrence_matrix_data.shape[0] ** 2)
+    
+    # Determinism (DET)
+    def diagonal_lines(matrix, min_length):
+        """Find diagonal lines longer than min_length"""
+        rows, cols = matrix.shape
+        diag_lines = []
+        for k in range(-rows+1, cols):
+            diag = np.diagonal(matrix, k)
+            # Find consecutive 1s
+            line_lengths = [len(list(g)) for k, g in itertools.groupby(diag) if k]
+            diag_lines.extend([l for l in line_lengths if l >= min_length])
+        return diag_lines
+    
+    diag_lines = diagonal_lines(recurrence_matrix_data, minimum_line_length)
+    det = sum(diag_lines) / np.sum(recurrence_matrix_data) if np.sum(recurrence_matrix_data) > 0 else 0
+    
+    # Laminarity (LAM)
+    def vertical_lines(matrix, min_length):
+        """Find vertical lines longer than min_length"""
+        cols = matrix.shape[1]
+        vert_lines = []
+        for col in range(cols):
+            column = matrix[:, col]
+            # Find consecutive 1s
+            line_lengths = [len(list(g)) for k, g in itertools.groupby(column) if k]
+            vert_lines.extend([l for l in line_lengths if l >= min_length])
+        return vert_lines
+    
+    vert_lines = vertical_lines(recurrence_matrix_data, minimum_line_length)
+    lam = sum(vert_lines) / np.sum(recurrence_matrix_data) if np.sum(recurrence_matrix_data) > 0 else 0
+    
+    # Maximum Diagonal Line Length
+    l_max = max(diag_lines) if diag_lines else 0
+    
+    # Entropy of Diagonal Lines
+    def entropy_diagonal_lines(diag_lines):
+        """Compute entropy of diagonal line lengths"""
+        if not diag_lines:
+            return 0
+        total_lines = sum(diag_lines)
+        prob = [l/total_lines for l in diag_lines]
+        return -sum(p * np.log(p) for p in prob)
+    
+    l_entr = entropy_diagonal_lines(diag_lines)
+    
+    # Mean Diagonal Line Length
+    l_mean = np.mean(diag_lines) if diag_lines else 0
+    
+    # Trapping Time (approximation)
+    tt = max(vertical_lines(recurrence_matrix_data, minimum_line_length)) if vert_lines else 0
+    
+    # Return features
+    return {
         'RR': rr,
         'DET': det,
         'LAM': lam,
@@ -56,8 +118,6 @@ def extract_rqa_features(data, embedding_dimension=3, time_delay=1, radius=0.1, 
         'L_mean': l_mean,
         'TT': tt
     }
-    
-    return rqa_features
 
 def extract_complexity_features(data):
     """
@@ -228,21 +288,27 @@ def save_features_to_csv(participant_id, all_features, output_path):
     logging.info(f"Features saved to {csv_path}.")
 
 def combine_all_features(output_path, combined_csv_path):
-    """
-    Combine features of all participants into a single CSV file.
-
-    Parameters:
-    -----------
-    output_path : str
-        Path where individual participant feature files are stored.
-    combined_csv_path : str
-        Path to save the combined CSV file.
-    """
-    logging.info("Combining all participant features into one CSV file.")
+    # Find all CSV files in the output path
+    feature_files = glob.glob(os.path.join(output_path, '*_features.csv'))
+    
+    # Debug: Print information about feature files
+    print("Output Path:", output_path)
+    print("Combined CSV Path:", combined_csv_path)
+    print("Number of feature files found:", len(feature_files))
+    
+    if not feature_files:
+        print("No feature files found. Checking directory contents:")
+        print("Directory contents:", os.listdir(output_path))
+    
+    # If no files found, raise a more informative error
+    if not feature_files:
+        raise ValueError(f"No feature CSV files found in {output_path}. Please check your feature extraction process.")
+    
+    # Proceed with concatenation if files exist
     feature_files = [os.path.join(output_path, f) for f in os.listdir(output_path) if f.endswith('_features.csv')]
     combined_data = pd.concat([pd.read_csv(file) for file in feature_files], ignore_index=True)
     combined_data.to_csv(combined_csv_path, index=False)
-    logging.info(f"Combined features saved to {combined_csv_path}.")
+    print(f"Combined features saved to {combined_csv_path}")
 
 def process_participants(participant_ids, data_path, output_path):
     """
@@ -257,10 +323,12 @@ def process_participants(participant_ids, data_path, output_path):
     output_path : str
         Path to save the output CSV files.
     """
-    for participant_id in participant_ids:
-        all_features = load_and_preprocess_eeg(participant_id, data_path)
-        if all_features:
-            save_features_to_csv(participant_id, all_features, output_path)
+    all_features = load_and_preprocess_eeg(participant_ids, data_path)
+
+    # for participant_id in participant_ids:
+    #     all_features = load_and_preprocess_eeg(participant_id, data_path)
+    if all_features:
+        save_features_to_csv(participant_ids, all_features, output_path)
     
     # Combine all individual participant features into one CSV
     combine_all_features(output_path, os.path.join(output_path, 'features2_combined.csv'))
@@ -276,8 +344,9 @@ def main():
         'P37', 'P38', 'P41', 'P42', 'P43', 'P44', 'P52', 'P53', 'P54', 'P56', 'P60'
     ]
 
-    data_path = 'D:/SEMESTER5/DL/Project\autism_marker_EEG/Aging/'
-    output_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/features_combined.csv'
+    data_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/Aging/'
+    output_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/features2'
+    combined_csv_path = 'D:/SEMESTER5/DL/Project/autism_marker_EEG/features2_combined.csv'
     
     os.makedirs(output_path, exist_ok=True)
 
@@ -289,7 +358,7 @@ def main():
 
     logging.info("All participants processed. Combining features.")
     # Combine all participant features into one CSV
-    combine_all_features(output_path, output_path)
+    combine_all_features(output_path, combined_csv_path)
 
 if __name__ == "__main__":
     main()
