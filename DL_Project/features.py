@@ -305,27 +305,35 @@ def combine_all_features(output_path, combined_csv_path):
     logging.info(f"Combined features saved to {combined_csv_path}.")
 
 
-def perform_feature_selection_on_combined_data(combined_csv_path, reduced_combined_csv_path):
+def perform_feature_selection(input_csv, output_csv):
     """
-    Perform feature selection on the combined dataset.
+    Perform feature selection using Featurewiz.
 
     Parameters:
     -----------
-    combined_csv_path : str
-        Path to the combined feature dataset.
-    reduced_combined_csv_path : str
-        Path to save the reduced feature dataset.
+    input_csv : str
+        Path to the CSV file containing extracted features.
+    output_csv : str
+        Path to save the CSV file after feature selection.
     """
-    logging.info("Performing feature selection on combined dataset.")
+    logging.info("Performing feature selection.")
     target_column = 'Autistic'
+
+    # Load dataset
+    df = pd.read_csv(input_csv)
+
+    # Drop non-feature columns (e.g., identifiers)
+    non_feature_columns = ['participant_id', 'channel']
+    feature_columns = [col for col in df.columns if col not in non_feature_columns and col != target_column]
+
+    # Perform feature selection
     selected_features, df_selected = featurewiz(
-        dataname=combined_csv_path,
-        target=target_column,
-        corr_limit=0.7,
-        verbose=2
+        dataname=df[feature_columns + [target_column]],  # Only keep features and target for selection
+        target=target_column,  # Target column for selection
+        corr_limit=0.7,  # Correlation threshold for SULOV
+        verbose=2  # Display process details
     )
-    df_selected.to_csv(reduced_combined_csv_path, index=False)
-    logging.info(f"Reduced dataset saved to {reduced_combined_csv_path}.")
+
 
 
 def main():
